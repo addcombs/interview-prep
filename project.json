@@ -2,7 +2,7 @@
   "name": "interview-prep",
   "developerName": "Adam Combs",
   "aws": { "profile": "default", "region": "us-east-2" },
-  "domain": { "apex": "acombs-dev.com", "host": "interview-prep.acombs-dev.com", "dnsProvider": "Squarespace" },
+  "domain": { "apex": "acombs-dev.com", "host": "interview-prep.acombs-dev.com" },
   "cognito": { "domainPrefix": "interview-prep-acombs" },
   "theme": { "primary": "#2E7D32" }
 }
