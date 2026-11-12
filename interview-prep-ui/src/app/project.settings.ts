@@ -4,7 +4,6 @@ export const PROJECT_SETTINGS = {
   appName: 'interview-prep',
   displayName: '',
   developerName: 'Adam Combs',
-  apiUrl: 'https://api.interview-prep.acombs-dev.com',
   auth: {
     userPoolId: 'us-east-2_POIQjRu3R',
     userPoolClientId: '445ju7arthjkqnvapg4a3eeb31',
