@@ -54,7 +54,7 @@
         <a
           mat-list-item
           href="#"
-          [activated]="selectedTechnologyGroup() === i"
+          [activated]="nav.selectedGroup() === i"
           (click)="$event.preventDefault(); showTechnologyGroup(i)"
         >
           <mat-icon matListItemIcon>{{ group.icon }}</mat-icon>
@@ -159,35 +159,9 @@
       } @else if (account.state() === 'error') {
         <p class="auth-error" role="alert">{{ account.error() }}</p>
         <button mat-button type="button" (click)="account.load()">Try again</button>
-      } @else if (account.state() === 'ready') {
-        <h1 class="welcome-title">Welcome to {{ appName }}@if (account.details()?.firstName || auth.firstName()) {, {{ account.details()?.firstName || auth.firstName() }}}!</h1>
       }
-      <mat-tab-group class="technology-tabs" mat-stretch-tabs="false" dynamicHeight aria-label="Technologies"
-        [selectedIndex]="selectedTechnologyGroup()"
-        (selectedIndexChange)="selectedTechnologyGroup.set($event)">
-        @for (group of technologyGroups; track group.label) {
-          <mat-tab [label]="group.label">
-            <section class="card-grid" [attr.aria-label]="group.label + ' technologies'">
-              @for (technology of group.technologies; track technology.name) {
-                <mat-card appearance="outlined" [style.--card-index]="$index">
-                  <mat-card-header>
-                    @if (technology.logo) {
-                      <img mat-card-avatar class="technology-logo" [src]="technology.logo" alt="" width="48" height="48" loading="lazy" />
-                    } @else {
-                      <mat-icon mat-card-avatar class="technology-icon" aria-hidden="true">{{ technology.icon }}</mat-icon>
-                    }
-                    <mat-card-title>{{ technology.name }}</mat-card-title>
-                    <mat-card-subtitle>{{ technology.description }}</mat-card-subtitle>
-                  </mat-card-header>
-                  <mat-card-content>
-                    <p>{{ technology.usage }}</p>
-                  </mat-card-content>
-                </mat-card>
-              }
-            </section>
-          </mat-tab>
-        }
-      </mat-tab-group>
+      <!-- The dashboard, or a technology's study guide. -->
+      <router-outlet />
     </main>
     <footer class="app-footer">
       <app-toolbar-background />

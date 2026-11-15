@@ -1,0 +1,74 @@
+<a mat-button class="back-link" routerLink="/">
+  <mat-icon>arrow_back</mat-icon>
+  All technologies
+</a>
+@if (found() && guide()) {
+  @let technology = found()!.technology;
+  @let studyGuide = guide()!;
+  <article class="study-guide" [attr.aria-labelledby]="'technology-' + technology.slug">
+    <header class="page-header">
+      @if (technology.logo) {
+        <img class="page-logo" [src]="technology.logo" alt="" width="72" height="72" />
+      } @else {
+        <mat-icon class="page-icon" aria-hidden="true">{{ technology.icon }}</mat-icon>
+      }
+      <div>
+        <p class="eyebrow">Study guide</p>
+        <h1 [id]="'technology-' + technology.slug">{{ technology.name }}</h1>
+        <p class="page-description">{{ technology.description }}</p>
+      </div>
+    </header>
+
+    <h2>Overview</h2>
+    <p class="overview">{{ studyGuide.overview }}</p>
+
+    <h2>Key concepts</h2>
+    <dl class="concepts">
+      @for (concept of studyGuide.concepts; track concept.term) {
+        <div>
+          <dt>{{ concept.term }}</dt>
+          <dd>{{ concept.detail }}</dd>
+        </div>
+      }
+    </dl>
+
+    <h2>Interview questions</h2>
+    <p class="hint">Answer each one out loud first, then open it to compare.</p>
+    <ol class="questions">
+      @for (item of studyGuide.questions; track item.question) {
+        <li>
+          <details>
+            <summary>
+              <span>{{ item.question }}</span>
+              <mat-icon class="expand-icon" aria-hidden="true">expand_more</mat-icon>
+            </summary>
+            <p>{{ item.answer }}</p>
+          </details>
+        </li>
+      }
+    </ol>
+
+    <h2>Common pitfalls</h2>
+    <ul class="pitfalls">
+      @for (pitfall of studyGuide.pitfalls; track pitfall) {
+        <li>
+          <mat-icon aria-hidden="true">warning_amber</mat-icon>
+          <span>{{ pitfall }}</span>
+        </li>
+      }
+    </ul>
+
+    <h2>Talking point: how this app uses it</h2>
+    <p>{{ technology.usage }}</p>
+
+    <p class="learn-more">
+      Go deeper:
+      <a [href]="studyGuide.learnMore.url" target="_blank" rel="noopener">{{ studyGuide.learnMore.label }}<span class="cdk-visually-hidden"> (opens in a new tab)</span></a>
+    </p>
+  </article>
+} @else {
+  <section class="not-found">
+    <h1>Study guide not found</h1>
+    <p>There's no study guide for "{{ slug() }}". Pick a technology from the dashboard instead.</p>
+  </section>
+}

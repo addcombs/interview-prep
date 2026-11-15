@@ -3,12 +3,14 @@ import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { MATERIAL_ANIMATIONS } from '@angular/material/core';
 import { MatDialog, MatDialogState } from '@angular/material/dialog';
+import { Router, provideRouter, withComponentInputBinding } from '@angular/router';
 import { of } from 'rxjs';
 import { App } from './app';
 import { AuthService } from '../auth/auth.service';
 import { AccountService, AccountDetails } from './account/account.service';
 import { ApiStatusService } from './api-status/api-status.service';
 import { BRIGHTNESS_STORAGE_KEY } from '../theme/theme.service';
+import { routes } from '../app.routes';
 
 describe('App', () => {
   const auth = {
@@ -48,6 +50,8 @@ describe('App', () => {
     account.error.set('');
     apiStatus.status.set('checking');
     vi.clearAllMocks();
+    // jsdom has no element scrolling; the app scrolls its content to the top on each navigation.
+    Element.prototype.scrollTo ??= () => undefined;
     await TestBed.configureTestingModule({
       imports: [App],
       providers: [
@@ -56,9 +60,21 @@ describe('App', () => {
         { provide: AccountService, useValue: account },
         { provide: ApiStatusService, useValue: apiStatus },
         { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
+        provideRouter(routes, withComponentInputBinding()),
       ],
     }).compileComponents();
   });
+
+  /** The app, opened at url (the dashboard by default) and settled. */
+  async function createApp(url = '/') {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    await TestBed.inject(Router).navigateByUrl(url);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture;
+  }
 
   it('starts with the sidenav closed', () => {
     const fixture = TestBed.createComponent(App);
@@ -103,9 +119,7 @@ describe('App', () => {
   });
 
   it('groups technology cards into front-end, back-end, cloud, and tools tabs', async () => {
-    const fixture = TestBed.createComponent(App);
-    fixture.detectChanges();
-    await fixture.whenStable();
+    const fixture = await createApp();
     const tabs: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]'));
     expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(['Front-end', 'Back-end', 'Cloud', 'Tools']);
     const expected = [
@@ -165,9 +179,7 @@ describe('App', () => {
   });
 
   it('selects technology tabs from the side menu', async () => {
-    const fixture = TestBed.createComponent(App);
-    fixture.detectChanges();
-    await fixture.whenStable();
+    const fixture = await createApp();
     const navItems: HTMLElement[] = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('mat-nav-list a[mat-list-item]'));
     expect(navItems.map((item) => item.querySelector('[matListItemTitle]')?.textContent?.trim()))    .toEqual(['Front-end', 'Back-end', 'Cloud', 'Tools']);
     navItems[2].click();
@@ -514,16 +526,72 @@ describe('App', () => {
     expect(account.editing()).toBe(false);
   });
 
-  it('greets signed-in users by first name when available', () => {
+  it('greets signed-in users by first name when available', async () => {
     auth.firstName.set('Alex');
-    const fixture = TestBed.createComponent(App);
-    fixture.detectChanges();
+    const fixture = await createApp();
     expect(fixture.nativeElement.querySelector('main h1').textContent).toContain('Welcome to Interview Prep, Alex');
   });
 
-  it('keeps the generic greeting for users without a first name', () => {
-    const fixture = TestBed.createComponent(App);
-    fixture.detectChanges();
+  it('keeps the generic greeting for users without a first name', async () => {
+    const fixture = await createApp();
     expect(fixture.nativeElement.querySelector('main h1').textContent.trim()).toBe('Welcome to Interview Prep!');
+  });
+
+  it('links every technology card to its study guide', async () => {
+    const fixture = await createApp();
+    const links: HTMLAnchorElement[] = Array.from(fixture.nativeElement.querySelectorAll('section.card-grid a.card-link'));
+    expect(links[0].getAttribute('href')).toBe('/technologies/angular');
+    expect(links[0].querySelector('mat-card mat-card-title')?.textContent?.trim()).toBe('Angular');
+    expect(links[0].querySelector('.card-more')?.textContent).toContain('Study guide');
+  });
+
+  it('opens a study guide from its card and comes back to the same tab', async () => {
+    const fixture = await createApp();
+    const tabs: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]'));
+    tabs[1].click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const spring: HTMLAnchorElement = fixture.nativeElement.querySelector('section.card-grid[aria-label="Back-end technologies"] a[href="/technologies/spring-boot"]');
+    spring.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await vi.waitFor(() => expect(fixture.nativeElement.querySelector('main h1')?.textContent?.trim()).toBe('Spring Boot'));
+    const page: HTMLElement = fixture.nativeElement.querySelector('main article.study-guide');
+    expect(page.querySelectorAll('.concepts dt').length).toBeGreaterThanOrEqual(3);
+    // Answers stay hidden until a question is opened.
+    const question = page.querySelector<HTMLDetailsElement>('.questions details')!;
+    expect(question.open).toBe(false);
+    expect(question.querySelector('summary span')?.textContent?.trim()).toMatch(/\?$/);
+    expect(page.querySelectorAll('.pitfalls li').length).toBeGreaterThanOrEqual(2);
+    const source = page.querySelector<HTMLAnchorElement>('.learn-more a')!;
+    expect(source.href).toMatch(/^https:\/\//);
+    expect(source.target).toBe('_blank');
+    expect(document.title).toBe('Spring Boot study guide - Interview Prep');
+
+    fixture.nativeElement.querySelector('a.back-link').click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await vi.waitFor(() => expect(fixture.nativeElement.querySelector('main h1')?.textContent?.trim()).toBe('Welcome to Interview Prep!'));
+    expect(fixture.nativeElement.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim()).toBe('Back-end');
+  });
+
+  it('returns to the dashboard on the chosen tab from the side menu of a study guide', async () => {
+    const fixture = await createApp('/technologies/aws-lambda');
+    await vi.waitFor(() => expect(fixture.nativeElement.querySelector('main h1')?.textContent?.trim()).toBe('AWS Lambda'));
+    const navItems: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('mat-nav-list a[mat-list-item]'));
+    // The page's own group is the current one in the menu.
+    expect(navItems[2].getAttribute('aria-current')).toBe('page');
+    navItems[3].click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await vi.waitFor(() => expect(fixture.nativeElement.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim()).toBe('Tools'));
+    expect(TestBed.inject(Router).url).toBe('/');
+  });
+
+  it('explains when there is no study guide for a technology', async () => {
+    const fixture = await createApp('/technologies/cobol');
+    await vi.waitFor(() => expect(fixture.nativeElement.querySelector('main h1')?.textContent?.trim()).toBe('Study guide not found'));
+    expect(fixture.nativeElement.querySelector('main .not-found')?.textContent).toContain('"cobol"');
+    expect(fixture.nativeElement.querySelector('main a.back-link')?.getAttribute('href')).toBe('/');
   });
 });
