@@ -44,9 +44,9 @@
 // A coloured band behind the logo, name and description, running edge to edge.
 .card-grid mat-card-header {
   padding: 16px;
-  background-color: var(--mat-sys-primary-container);
-  color: var(--mat-sys-on-primary-container);
-  --mat-card-subtitle-text-color: var(--mat-sys-on-primary-container);
+  background-color: var(--mat-sys-secondary-container);
+  color: var(--mat-sys-on-secondary-container);
+  --mat-card-subtitle-text-color: var(--mat-sys-on-secondary-container);
 }
 
 .card-link:hover mat-card,
@@ -70,7 +70,7 @@
 }
 
 // Logos and icons sit on a round chip in the page colour, so green logos such as Spring's stay
-// visible on the green header.
+// visible on the green header in dark mode.
 .technology-logo,
 .technology-icon {
   box-sizing: border-box;
