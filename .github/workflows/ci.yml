@@ -4,6 +4,7 @@
 # deploy role and set its ARN as the repository's Actions variable AWS_DEPLOY_ROLE_ARN.
 # The UI deploy also gives the Cognito sign-in page the theme colors. The deploy publishes new API
 # code only; the function's settings stay as provision.ps1 set them, so no secrets are stored in GitHub.
+# A site with "accounts": false in project.json has no sign-in, so its deploys skip the Cognito steps.
 name: CI
 
 on:
@@ -109,6 +110,7 @@ jobs:
         run: |
           echo "APP=$(jq -r .name ../project.json)" >> "$GITHUB_ENV"
           echo "AWS_REGION=$(jq -r .aws.region ../project.json)" >> "$GITHUB_ENV"
+          echo "ACCOUNTS=$(jq -r '.accounts != false' ../project.json)" >> "$GITHUB_ENV"
       - uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
@@ -133,6 +135,7 @@ jobs:
         run: |
           domain=$(jq -r .domain.host ../project.json)
           curl --fail --silent --show-error --retry 5 --retry-delay 5 "https://$domain/actuator/health"
+          [ "$ACCOUNTS" = true ] || exit 0
           # The health check is public, so it misses failures in the security chain (such as a 502 on
           # every signed-in request); without a token these must reach it and be refused with 401.
           for request in "GET /api/account" "PUT /api/account"; do
@@ -154,14 +157,18 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
-      # new-app.ps1 leaves the Cognito IDs empty until provision.ps1 fills them in.
-      - name: Check the UI settings have the Cognito IDs
+      - name: Read project.json
         run: |
-          grep -qE "userPoolId: '[^']+'" interview-prep-ui/src/app/project.settings.ts \
-            || { echo "::error::interview-prep-ui/src/app/project.settings.ts has no Cognito IDs. Run scripts\\provision.ps1."; exit 1; }
           echo "APP=$(jq -r .name project.json)" >> "$GITHUB_ENV"
           echo "DOMAIN=$(jq -r .domain.host project.json)" >> "$GITHUB_ENV"
           echo "AWS_REGION=$(jq -r .aws.region project.json)" >> "$GITHUB_ENV"
+          echo "ACCOUNTS=$(jq -r '.accounts != false' project.json)" >> "$GITHUB_ENV"
+      # new-app.ps1 leaves the Cognito IDs empty until provision.ps1 fills them in.
+      - name: Check the UI settings have the Cognito IDs
+        if: env.ACCOUNTS == 'true'
+        run: |
+          grep -qE "userPoolId: '[^']+'" interview-prep-ui/src/app/project.settings.ts \
+            || { echo "::error::interview-prep-ui/src/app/project.settings.ts has no Cognito IDs. Run scripts\\provision.ps1."; exit 1; }
       - uses: actions/download-artifact@v4
         with:
           name: ui
@@ -192,6 +199,7 @@ jobs:
       # So the sign-in page always has the site's colors: config/managed-login-branding.json filled in
       # from the theme palettes by scripts/managed-login-style.ps1.
       - name: Brand the sign-in page with the theme colors
+        if: env.ACCOUNTS == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'

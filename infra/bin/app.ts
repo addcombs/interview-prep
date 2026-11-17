@@ -24,7 +24,7 @@ if (!zip) throw new Error(`No *-lambda.zip in ${target}; build it with mvn -P la
 
 new AppStack(app, project.name, {
   env: { region: project.aws.region },
-  description: `${project.name}: sign-in, UI, API and CloudFront (infra/ in its repository)`,
+  description: `${project.name}: ${project.accounts === false ? '' : 'sign-in, '}UI, API and CloudFront (infra/ in its repository)`,
   project,
   apiZip: join(target, zip),
   javaPackage,

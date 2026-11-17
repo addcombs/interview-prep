@@ -4,6 +4,7 @@
 # in ~\.m2 (any Maven build of the API downloads it). Log: logs\migrations.log
 param([switch]$DryRun)
 . "$PSScriptRoot\common.ps1" -LogName 'migrations.log' -Title 'database migrations'
+if (-not $accounts) { Step 'project.json has "accounts": false, so there is no database; nothing to do.'; Wait-Close; exit 0 }
 
 $pgJar = Get-ChildItem "$env:USERPROFILE\.m2\repository\org\postgresql\postgresql" -Recurse -Filter 'postgresql-*.jar' -ErrorAction SilentlyContinue |
   Where-Object Name -notmatch 'sources' | Sort-Object { [version]($_.Directory.Name -replace '[^0-9.]', '') } | Select-Object -Last 1

@@ -5,6 +5,8 @@
 #     distribution for the UI and the API, its Route 53 records, and the GitHub deploy role
 #  4. config\cognito-pool.json and the UI's settings from the stack, and the sign-in page's style
 #  5. the database schema and migrations
+# A site with "accounts": false in project.json skips the sign-in, the database login (.env) and
+# step 4's Cognito parts and step 5. "fileBuckets" adds a served bucket per entry (infra\lib\app-stack.ts).
 #  6. the repository's AWS_DEPLOY_ROLE_ARN variable, then a push or a CI run to deploy the UI and API
 # Safe to re-run; run it again after changing project.json, the infra code or the API's .env (the
 # database login reaches the function only from here, never from GitHub).
@@ -66,16 +68,18 @@ $code = $LASTEXITCODE
 Pop-Location
 if ($code -ne 0) { Fail "Maven build failed (exit $code); see logs\provision-api-build.log" }
 
-$envFile = Join-Path $apiDir '.env'
-if (-not (Test-Path $envFile)) { Fail ".env not found in $app-api." }
 $db = @{}
-foreach ($line in Get-Content $envFile) {
-  if ($line -match '^\s*#' -or $line -notmatch '=') { continue }
-  $k, $v = $line -split '=', 2
-  $db[$k.Trim()] = $v.Trim().Replace('\\', '\')
+if ($accounts) {
+  $envFile = Join-Path $apiDir '.env'
+  if (-not (Test-Path $envFile)) { Fail ".env not found in $app-api." }
+  foreach ($line in Get-Content $envFile) {
+    if ($line -match '^\s*#' -or $line -notmatch '=') { continue }
+    $k, $v = $line -split '=', 2
+    $db[$k.Trim()] = $v.Trim().Replace('\\', '\')
+  }
+  foreach ($k in 'DATABASE_URL', 'DATABASE_USERNAME', 'DATABASE_PASSWORD') { if (-not $db[$k]) { Fail "$k is missing from .env." } }
+  if ($db.DATABASE_URL -notmatch '-pooler\.') { Step 'note: DATABASE_URL uses the direct Neon host; the pooled host (-pooler) suits Lambda better.' }
 }
-foreach ($k in 'DATABASE_URL', 'DATABASE_USERNAME', 'DATABASE_PASSWORD') { if (-not $db[$k]) { Fail "$k is missing from .env." } }
-if ($db.DATABASE_URL -notmatch '-pooler\.') { Step 'note: DATABASE_URL uses the direct Neon host; the pooled host (-pooler) suits Lambda better.' }
 
 Push-Location $infra
 if (-not (Test-Path 'node_modules')) {
@@ -103,9 +107,12 @@ if ($ImportExisting) {
 }
 if ($ImportExisting -and $null -eq (Invoke-AwsCli @('cloudformation','describe-stacks','--stack-name',$app) -AllowFail -Quiet)) {
   # --- one-off: adopt what the old setup scripts made, then free the host for the new distribution ---
-  $poolId = Invoke-AwsCli @('cognito-idp','list-user-pools','--max-results','60','--query',"UserPools[?Name=='$app-users'].Id | [0]",'--output','text')
-  if (-not $poolId -or $poolId -eq 'None') { Pop-Location; Fail "no user pool named $app-users to import." }
-  $clientId = Invoke-AwsCli @('cognito-idp','list-user-pool-clients','--user-pool-id',$poolId,'--query',"UserPoolClients[?ClientName=='$app-ui'].ClientId | [0]",'--output','text')
+  $poolId = $null; $clientId = $null
+  if ($accounts) {
+    $poolId = Invoke-AwsCli @('cognito-idp','list-user-pools','--max-results','60','--query',"UserPools[?Name=='$app-users'].Id | [0]",'--output','text')
+    if (-not $poolId -or $poolId -eq 'None') { Pop-Location; Fail "no user pool named $app-users to import." }
+    $clientId = Invoke-AwsCli @('cognito-idp','list-user-pool-clients','--user-pool-id',$poolId,'--query',"UserPoolClients[?ClientName=='$app-ui'].ClientId | [0]",'--output','text')
+  }
   $fnArn = Invoke-AwsCli @('lambda','get-function','--function-name',"$app-api",'--query','Configuration.FunctionArn','--output','text')
   # Each resource the import-only template has, by its construct path, and how CloudFormation finds it.
   $ids = [ordered]@{
@@ -122,6 +129,11 @@ if ($ImportExisting -and $null -eq (Invoke-AwsCli @('cloudformation','describe-s
     'AutoConfirm' = @{ FunctionName = "$app-auto-confirm" }
     'AutoConfirmRole' = @{ RoleName = "$app-auto-confirm-lambda" }
   }
+  foreach ($name in $fileBuckets.Keys) {
+    $bucket = FileBucket $name $account
+    if ($null -eq (Invoke-AwsCli @('s3api','head-bucket','--bucket',$bucket) -AllowFail -Quiet)) { Pop-Location; Fail "no bucket $bucket to import for fileBuckets.$name." }
+    $ids["Files-$name"] = @{ BucketName = $bucket }
+  }
   $importOut = Join-Path $infra 'cdk.out.import'
   Invoke-Npm @($cdk + @('synth', '-q', '-o', $importOut, '-c', 'importOnly=true') + $cdkArgs) *>&1 | ForEach-Object { "$_" } | Set-Content $deployLog
   if ($LASTEXITCODE -ne 0) { Pop-Location; Fail 'cdk synth (import) failed; see logs\cdk-deploy.log' }
@@ -135,7 +147,7 @@ if ($ImportExisting -and $null -eq (Invoke-AwsCli @('cloudformation','describe-s
     $mapping[$r.Name] = $ids[$key]
   }
   $mappingFile = Write-Json (Join-Path $logs 'cdk-import-mapping.json') $mapping
-  Step "importing $($mapping.Count) existing resources into the $app stack (user pool $poolId)..."
+  Step "importing $($mapping.Count) existing resources into the $app stack$(if ($poolId) { " (user pool $poolId)" })..."
   Invoke-Npm @($cdk + @('import', '--resource-mapping', $mappingFile, '--force', '-c', 'importOnly=true') + $cdkArgs) *>&1 |
     ForEach-Object { "$_" } | Add-Content $deployLog
   if ($LASTEXITCODE -ne 0) { Pop-Location; Fail 'cdk import failed; see logs\cdk-deploy.log' }
@@ -159,26 +171,30 @@ if ($ImportExisting -and $null -eq (Invoke-AwsCli @('cloudformation','describe-s
     Invoke-AwsCli @('route53','change-resource-record-sets','--hosted-zone-id',$zoneId,'--change-batch',"file://$batch") | Out-Null
     Step "old DNS records for $domain removed ($(($old.Type) -join ', '))"
   }
-  # The stack writes the UI bucket's policy itself (for the new distribution); S3 allows only one.
-  Invoke-AwsCli @('s3api','delete-bucket-policy','--bucket',"$app-ui-$account") | Out-Null
-  Step "old policy on $app-ui-$account removed (it let only the old distribution read)"
+  # The stack writes the UI's and file buckets' policies itself (for the new distribution); S3 allows only one.
+  foreach ($bucket in @("$app-ui-$account") + @($fileBuckets.Keys | ForEach-Object { FileBucket $_ $account })) {
+    Invoke-AwsCli @('s3api','delete-bucket-policy','--bucket',$bucket) | Out-Null
+    Step "old policy on $bucket removed (it let only the old distribution read)"
+  }
 }
 Step 'deploying the stack (a new CloudFront distribution takes 5-15 minutes)...'
 $outputs = Join-Path $logs 'cdk-outputs.json'
 # The output is not shown: CDK echoes parameter values, and these are the database login.
-$params = @('--parameters', "DatabaseUrl=$($db.DATABASE_URL)", '--parameters', "DatabaseUsername=$($db.DATABASE_USERNAME)", '--parameters', "DatabasePassword=$($db.DATABASE_PASSWORD)")
+$params = if ($accounts) { @('--parameters', "DatabaseUrl=$($db.DATABASE_URL)", '--parameters', "DatabaseUsername=$($db.DATABASE_USERNAME)", '--parameters', "DatabasePassword=$($db.DATABASE_PASSWORD)") } else { @() }
 Invoke-Npm @($cdk + @('deploy', '--require-approval', 'never', '--outputs-file', $outputs) + $cdkArgs + $params) *>&1 |
   ForEach-Object { "$_" } | Where-Object { $_ -notmatch 'Database(Url|Username|Password)' } | Set-Content $deployLog
 $code = $LASTEXITCODE
 Pop-Location
 if ($code -ne 0) { Fail "cdk deploy failed (exit $code); see logs\cdk-deploy.log" }
 $out = (Get-Content $outputs -Raw | ConvertFrom-Json).$app
-Step "stack deployed: distribution $($out.DistributionId), user pool $($out.UserPoolId)"
+Step "stack deployed: distribution $($out.DistributionId)$(if ($accounts) { ", user pool $($out.UserPoolId)" })"
 
 # --- 4. Cognito IDs, UI settings, theme palettes and the sign-in page's style ---
-Write-Json $cognitoPoolFile ([ordered]@{
-  userPoolId = $out.UserPoolId; userPoolClientId = $out.UserPoolClientId; domain = $out.SignInDomain; issuer = $out.Issuer
-}) | Out-Null
+if ($accounts) {
+  Write-Json $cognitoPoolFile ([ordered]@{
+    userPoolId = $out.UserPoolId; userPoolClientId = $out.UserPoolClientId; domain = $out.SignInDomain; issuer = $out.Issuer
+  }) | Out-Null
+}
 Sync-UiConfig
 if (-not (Test-Path (Join-Path $uiDir 'node_modules\.bin\ng.cmd'))) {
   Step 'installing the UI''s packages (npm ci)...'
@@ -189,18 +205,20 @@ if (-not (Test-Path (Join-Path $uiDir 'node_modules\.bin\ng.cmd'))) {
   if ($code -ne 0) { Fail "npm ci failed in $app-ui." }
 }
 try { Sync-Theme } catch { Fail $_.Exception.Message }
-# CI applies the theme colors to this style on each deploy; Cognito's default starts it off.
-$brandingId = Invoke-AwsCli @('cognito-idp','describe-managed-login-branding-by-client','--user-pool-id',$out.UserPoolId,'--client-id',$out.UserPoolClientId,
-  '--query','ManagedLoginBranding.ManagedLoginBrandingId','--output','text') -AllowFail -Quiet
-if (-not $brandingId -or $brandingId -eq 'None') {
-  Invoke-AwsCli @('cognito-idp','create-managed-login-branding','--user-pool-id',$out.UserPoolId,'--client-id',$out.UserPoolClientId,
-    '--use-cognito-provided-values','--query','ManagedLoginBranding.ManagedLoginBrandingId','--output','text') | Out-Null
-  Step 'sign-in page style created (Cognito''s default; the first deploy applies the theme colors)'
-}
+if ($accounts) {
+  # CI applies the theme colors to this style on each deploy; Cognito's default starts it off.
+  $brandingId = Invoke-AwsCli @('cognito-idp','describe-managed-login-branding-by-client','--user-pool-id',$out.UserPoolId,'--client-id',$out.UserPoolClientId,
+    '--query','ManagedLoginBranding.ManagedLoginBrandingId','--output','text') -AllowFail -Quiet
+  if (-not $brandingId -or $brandingId -eq 'None') {
+    Invoke-AwsCli @('cognito-idp','create-managed-login-branding','--user-pool-id',$out.UserPoolId,'--client-id',$out.UserPoolClientId,
+      '--use-cognito-provided-values','--query','ManagedLoginBranding.ManagedLoginBrandingId','--output','text') | Out-Null
+    Step 'sign-in page style created (Cognito''s default; the first deploy applies the theme colors)'
+  }
 
-# --- 5. database ---
-& "$PSScriptRoot\apply-migrations.ps1"
-if ($LASTEXITCODE -ne 0) { Fail 'migrations failed; see logs\migrations.log' }
+  # --- 5. database ---
+  & "$PSScriptRoot\apply-migrations.ps1"
+  if ($LASTEXITCODE -ne 0) { Fail 'migrations failed; see logs\migrations.log' }
+}
 
 if ($SkipDeploy) { Step "DONE (no deploy). https://$domain/ serves the UI after the next deploy from main."; Wait-Close; exit 0 }
 

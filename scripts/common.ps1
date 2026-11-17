@@ -28,6 +28,12 @@ $cloudFrontRegion = 'us-east-1'
 $dbSchema = if ($project.database.schema) { $project.database.schema } else { ($app -replace '[^A-Za-z0-9]', '_').ToLowerInvariant() }
 # The API's Java package: com.acombsdev.<app name in lower-case letters and digits>, e.g. com.acombsdev.interviewprep.
 $javaPackage = 'com.acombsdev.' + ($app -replace '[^A-Za-z0-9]', '').ToLowerInvariant()
+# project.json "accounts": false is a public site with no sign-in or database (see infra\lib\app-stack.ts).
+$accounts = $project.accounts -ne $false
+# project.json "fileBuckets": { "<name>": "<path>" }: private buckets <app>-<name>-<account>, served at https://<host>/<path>/.
+$fileBuckets = [ordered]@{}
+if ($project.fileBuckets) { foreach ($p in $project.fileBuckets.PSObject.Properties) { $fileBuckets[$p.Name] = $p.Value } }
+function FileBucket($name, $account) { "$app-$name-$account" }
 $apiDir = Join-Path $root "$app-api"
 $uiDir  = Join-Path $root "$app-ui"
 
@@ -105,6 +111,22 @@ function Get-SharedCertificate {
   return $arn
 }
 
+# The same rule as formatDisplayName in the UI's app-name.ts: interview-prep -> Interview Prep.
+function DisplayName($s) {
+  (($s -replace '[^\p{L}\p{N}\s]', ' ') -split '\s+' | Where-Object { $_ } |
+    ForEach-Object { $_.Substring(0, 1).ToUpperInvariant() + $_.Substring(1) }) -join ' '
+}
+# Replaces every key of $map found in $text in one pass, so a new value is never replaced again.
+# With -IgnoreCase the keys must be upper case. Used by new-app.ps1 and sync-from-template.ps1.
+function Replace-All($text, $map, [switch]$IgnoreCase) {
+  if (-not $map.Count) { return $text }
+  $pattern = ($map.Keys | Sort-Object Length -Descending | ForEach-Object { [regex]::Escape($_) }) -join '|'
+  if ($IgnoreCase) {
+    return [regex]::Replace($text, $pattern, { param($m) $map[$m.Value.ToUpperInvariant()] }, 'IgnoreCase')
+  }
+  return [regex]::Replace($text, $pattern, { param($m) $map[$m.Value] })
+}
+
 # The GitHub CLI: on PATH, or where its installer puts it.
 $gh = (Get-Command gh.exe -ErrorAction SilentlyContinue).Source
 if (-not $gh -and (Test-Path "$env:ProgramFiles\GitHub CLI\gh.exe")) { $gh = "$env:ProgramFiles\GitHub CLI\gh.exe" }
@@ -155,25 +177,31 @@ function Sync-UiConfig {
   $ids = if (Test-Path $cognitoPoolFile) { Get-Content $cognitoPoolFile -Raw | ConvertFrom-Json } else { $null }
   function Ts($s) { "'" + ("$s" -replace '\\', '\\' -replace "'", "\'") + "'" }
   $urls = "[$(Ts 'http://localhost:4200/'), $(Ts "https://$domain/")]"
-  $text = @(
-    "// Generated from project.json and config\cognito-pool.json by Sync-UiConfig in scripts\common.ps1,",
-    '// which start-all runs before building. Edit those files, not this one.',
-    'export const PROJECT_SETTINGS = {',
-    "  appName: $(Ts $app),",
-    "  displayName: $(Ts $project.displayName),",
-    "  developerName: $(Ts $project.developerName),",
+  # Each file bucket's address as <name>Url, e.g. photosUrl: 'https://<host>/images/photos/'.
+  $bucketUrls = foreach ($name in $fileBuckets.Keys) {
+    $key = ($name -split '-' | ForEach-Object -Begin { $i = 0 } -Process { if ($i++) { $_.Substring(0, 1).ToUpperInvariant() + $_.Substring(1) } else { $_ } }) -join ''
+    "  ${key}Url: $(Ts "https://$domain/$($fileBuckets[$name])/"),"
+  }
+  $auth = if ($accounts) { @(
     '  auth: {',
     "    userPoolId: $(Ts $ids.userPoolId),",
     "    userPoolClientId: $(Ts $ids.userPoolClientId),",
     "    domain: $(Ts $ids.domain),",
     "    redirectSignIn: $urls,",
     "    redirectSignOut: $urls,",
-    '  },',
-    '};',
-    ''
-  ) -join "`n"
+    '  },'
+  ) } else { @() }
+  $lines = @(
+    "// Generated from project.json$(if ($accounts) { ' and config\cognito-pool.json' }) by Sync-UiConfig in scripts\common.ps1,",
+    '// which start-all runs before building. Edit those files, not this one.',
+    'export const PROJECT_SETTINGS = {',
+    "  appName: $(Ts $app),",
+    "  displayName: $(Ts $project.displayName),",
+    "  developerName: $(Ts $project.developerName),"
+  ) + @($bucketUrls) + $auth + @('};', '')
+  $text = $lines -join "`n"
   $file = Join-Path $uiDir 'src\app\project.settings.ts'
   $current = if (Test-Path $file) { [System.IO.File]::ReadAllText($file) } else { $null }
   if ($current -ne $text) { Write-Utf8 $file $text; Step 'UI settings written: src\app\project.settings.ts' }
-  if (-not $ids) { Step 'note: config\cognito-pool.json not found; the UI will report sign-in as not configured' }
+  if ($accounts -and -not $ids) { Step 'note: config\cognito-pool.json not found; the UI will report sign-in as not configured' }
 }

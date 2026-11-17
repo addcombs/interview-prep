@@ -45,9 +45,14 @@ try {
   # --- API verify ---
   Run 'api-verify' $api $mvn @('--batch-mode','--no-transfer-progress','verify')
   # --- Start both (each in its own window, logging to logs\) ---
-  # The API reads its schema and user pool from here and its database login from .env.
-  $ids = Get-CognitoIds
-  $apiCmd = "`$env:JAVA_HOME='$env:JAVA_HOME'; `$env:Path='$env:Path'; `$env:DATABASE_SCHEMA='$dbSchema'; `$env:COGNITO_ISSUER='$($ids.issuer)'; `$env:COGNITO_CLIENT_ID='$($ids.userPoolClientId)'; Set-Location '$api'; & '$mvn' spring-boot:run *>&1 | Tee-Object '$logs\api-run.log'"
+  # The API reads its schema and user pool from here and its database login from .env (a site with
+  # "accounts": false has neither).
+  $accountEnv = ''
+  if ($accounts) {
+    $ids = Get-CognitoIds
+    $accountEnv = "`$env:DATABASE_SCHEMA='$dbSchema'; `$env:COGNITO_ISSUER='$($ids.issuer)'; `$env:COGNITO_CLIENT_ID='$($ids.userPoolClientId)'; "
+  }
+  $apiCmd = "`$env:JAVA_HOME='$env:JAVA_HOME'; `$env:Path='$env:Path'; $accountEnv Set-Location '$api'; & '$mvn' spring-boot:run *>&1 | Tee-Object '$logs\api-run.log'"
   $uiCmd  = "Set-Location '$ui'; $npmCommand start *>&1 | Tee-Object '$logs\ui-run.log'"
   Start-Process powershell -ArgumentList '-NoExit','-NoProfile','-Command',$apiCmd -WindowStyle Normal
   Start-Process powershell -ArgumentList '-NoExit','-NoProfile','-Command',$uiCmd -WindowStyle Normal
