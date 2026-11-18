@@ -35,7 +35,7 @@ npm start
 
 Open `http://localhost:4200/`. The local `/api/account`, `/actuator/health`,
 `/swagger-ui`, and `/v3/api-docs` proxies target `http://localhost:8080` in `proxy.conf.json`
-(`src/app/api-url.ts` keeps API paths relative in development and prefixes the API host in production).
+(production builds use the same relative paths, which the site's CloudFront distribution sends to the API).
 The toolbar's ⋮ menu links to the backend's Swagger UI and opens an About dialog.
 A compatible backend must be
 running on port 8080; changing the proxy port is not a substitute for starting it.

@@ -150,7 +150,7 @@ export const TECHNOLOGY_GROUPS: TechnologyGroup[] = [
       },
       {
         slug: 'amazon-cloudfront', name: 'Amazon CloudFront', icon: 'public', description: 'Content delivery and HTTPS',
-        usage: 'Serves the UI at the app domain and the API at its api subdomain over HTTPS, caching the UI files and passing API requests straight to Lambda.',
+        usage: 'Serves the UI and the API from one distribution at the app domain over HTTPS, caching the UI files and passing the API paths straight to Lambda.',
       },
       {
         slug: 'amazon-s3', name: 'Amazon S3', icon: 'storage', description: 'Object storage',
@@ -158,7 +158,7 @@ export const TECHNOLOGY_GROUPS: TechnologyGroup[] = [
       },
       {
         slug: 'aws-certificate-manager', name: 'AWS Certificate Manager', icon: 'verified_user', description: 'Free TLS certificates',
-        usage: 'Issues and auto-renews the certificates for the app and API domains, validated through DNS records at the domain\'s DNS provider.',
+        usage: 'Issues and auto-renews one certificate for the root domain and its subdomains, shared by every app and validated through DNS records in Route 53.',
       },
       {
         slug: 'amazon-cloudwatch-logs', name: 'Amazon CloudWatch Logs', icon: 'receipt_long', description: 'API logging',
@@ -176,11 +176,11 @@ export const TECHNOLOGY_GROUPS: TechnologyGroup[] = [
       },
       {
         slug: 'powershell-scripts', name: 'PowerShell scripts', icon: 'terminal', description: 'Setup, tests, start-up, and deployment',
-        usage: 'scripts/start-all.ps1 installs dependencies, builds and tests both apps, then starts the API and UI; the create-* and deploy-api scripts set up AWS from project.json, and GitHub Actions builds, tests, and deploys each push to main; scripts/new-app.ps1 copies the template into a new, renamed app.',
+        usage: 'scripts/start-all.ps1 installs dependencies, builds and tests both apps, then starts the API and UI; scripts/provision.ps1 sets up AWS from project.json through the CDK stack in infra/, and GitHub Actions builds, tests, and deploys each push to main; scripts/new-app.ps1 in template-0 copies the template into a new, renamed app.',
       },
       {
         slug: 'aws-cli', name: 'AWS CLI', icon: 'keyboard', description: 'Command-line access to AWS',
-        usage: 'Runs every AWS step in the setup and deploy scripts, from creating the Cognito pool and certificates to uploading the UI and publishing new Lambda versions.',
+        usage: 'Runs the AWS steps in the setup and deploy scripts, from requesting the certificate and deploying the CDK stack to uploading the UI and publishing new Lambda versions.',
       },
     ],
   },
