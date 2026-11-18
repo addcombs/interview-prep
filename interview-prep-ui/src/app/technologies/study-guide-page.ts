@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input } from '@angular/core';
+import { NgOptimizedImage } from '@angular/common';
+import { Component, computed, effect, inject, input } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { Title } from '@angular/platform-browser';
@@ -11,10 +12,9 @@ import { TechnologyNavService } from './technology-nav.service';
 /** One technology's study guide (concepts, interview questions and pitfalls), opened from its dashboard card. */
 @Component({
   selector: 'app-study-guide-page',
-  imports: [MatButtonModule, MatIconModule, RouterLink],
+  imports: [NgOptimizedImage, MatButtonModule, MatIconModule, RouterLink],
   templateUrl: './study-guide-page.html',
   styleUrl: './study-guide-page.scss',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class StudyGuidePageComponent {
   /** From the route's :slug, through component input binding. */

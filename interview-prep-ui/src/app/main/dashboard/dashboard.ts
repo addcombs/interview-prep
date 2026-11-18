@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { NgOptimizedImage } from '@angular/common';
+import { Component, inject } from '@angular/core';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTabsModule } from '@angular/material/tabs';
@@ -12,10 +13,9 @@ import { APP_DISPLAY_NAME } from '../app-name';
 /** The home page: the technologies in tabs by group, each card opening that technology's study guide. */
 @Component({
   selector: 'app-dashboard',
-  imports: [MatCardModule, MatIconModule, MatTabsModule, RouterLink],
+  imports: [NgOptimizedImage, MatCardModule, MatIconModule, MatTabsModule, RouterLink],
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.scss',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class DashboardComponent {
   protected readonly appName = APP_DISPLAY_NAME;
