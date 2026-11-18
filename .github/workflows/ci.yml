@@ -178,22 +178,29 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
       # Hashed assets can be cached for a year; index.html must always be re-checked. The files from
-      # public/ (logos/ and favicon.ico) keep their names when they change, so they are cached for an
-      # hour and CloudFront's copies are dropped on each deploy.
+      # public/ (e.g. logos/ and favicon.ico, whatever the UI's public/ holds) keep their names when
+      # they change, so they are cached for an hour and CloudFront's copies are dropped on each deploy.
       - name: Upload to S3 and refresh CloudFront
         run: |
           dist=$(dirname dist/*/browser/index.html)
           account=$(aws sts get-caller-identity --query Account --output text)
           bucket="$APP-ui-$account"
-          aws s3 sync "$dist" "s3://$bucket" --delete --exclude index.html --exclude 'logos/*' --exclude favicon.ico \
+          # One pattern and one invalidation path per top-level entry of public/: name/* for a folder.
+          excludes=(); includes=(); paths=(/index.html /)
+          for entry in "$APP-ui"/public/*; do
+            name=$(basename "$entry")
+            if [ -d "$entry" ]; then pattern="$name/*"; else pattern="$name"; fi
+            excludes+=(--exclude "$pattern"); includes+=(--include "$pattern"); paths+=("/$pattern")
+          done
+          aws s3 sync "$dist" "s3://$bucket" --delete --exclude index.html "${excludes[@]}" \
             --cache-control 'public,max-age=31536000,immutable' --only-show-errors
-          aws s3 sync "$dist" "s3://$bucket" --delete --exclude '*' --include 'logos/*' --include favicon.ico \
+          aws s3 sync "$dist" "s3://$bucket" --delete --exclude '*' "${includes[@]}" \
             --cache-control 'public,max-age=3600' --only-show-errors
           aws s3 cp "$dist/index.html" "s3://$bucket/index.html" --cache-control no-cache \
             --content-type text/html --only-show-errors
           dist_id=$(aws cloudfront list-distributions \
             --query "DistributionList.Items[?Aliases.Items && contains(Aliases.Items, '$DOMAIN')].Id | [0]" --output text)
-          id=$(aws cloudfront create-invalidation --distribution-id "$dist_id" --paths /index.html / '/logos/*' /favicon.ico \
+          id=$(aws cloudfront create-invalidation --distribution-id "$dist_id" --paths "${paths[@]}" \
             --query Invalidation.Id --output text)
           aws cloudfront wait invalidation-completed --distribution-id "$dist_id" --id "$id"
       # So the sign-in page always has the site's colors: config/managed-login-branding.json filled in
@@ -213,9 +220,12 @@ jobs:
           $settings = Get-Content interview-prep-ui/src/app/project.settings.ts -Raw
           $pool = [regex]::Match($settings, "userPoolId: '([^']+)'").Groups[1].Value
           $client = [regex]::Match($settings, "userPoolClientId: '([^']+)'").Groups[1].Value
-          # The app's logo above the sign-in form, in light and dark mode. Cognito refuses an SVG whose
-          # root has role or aria-label, so those are dropped from the uploaded copy.
-          $svg = [System.IO.File]::ReadAllText("$PWD/interview-prep-ui/public/logos/logo.svg") -replace '\s(role|aria-label)="[^"]*"', ''
+          # The app's logo above the sign-in form, in light and dark mode: the first logo.svg in the UI's
+          # public/ (public/logos/logo.svg in the template). Cognito refuses an SVG whose root has role
+          # or aria-label, so those are dropped from the uploaded copy.
+          $logoFile = Get-ChildItem interview-prep-ui/public -Recurse -Filter logo.svg | Sort-Object FullName | Select-Object -First 1
+          if (-not $logoFile) { throw 'No logo.svg in interview-prep-ui/public for the sign-in page.' }
+          $svg = [System.IO.File]::ReadAllText($logoFile.FullName) -replace '\s(role|aria-label)="[^"]*"', ''
           $logo = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($svg))
           $assets = Join-Path $env:RUNNER_TEMP 'managed-login-assets.json'
           [System.IO.File]::WriteAllText($assets, (ConvertTo-Json -Compress @(
