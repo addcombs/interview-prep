@@ -25,20 +25,13 @@ theme colours. To deploy without pushing, run the workflow from the repository's
 Run workflow). The deploy never changes the stack or the function's settings, so no secrets are
 stored in GitHub; after changing `.env`, `project.json` or `infra\`, run `scripts\provision.ps1` again.
 
-## Create a new app
+## Set up
 
-```powershell
-.\scripts\new-app.ps1 -Name project-1 -Primary '#RRGGBB' -Provision
-```
-
-copies this project to `..\project-1` with the folders, Java package, names, host
-(`project-1.acombs-dev.com` unless `-HostName` is given), Cognito prefix, schema and colours
-renamed, writes its `.env` with the shared database login, and starts a git repository. With
-`-Provision` it then runs the new app's `scripts\provision.ps1` (otherwise run it yourself from the
-new folder), which:
+The site was created from `template-0` and is independent of it. `scripts\provision.ps1` sets up,
+or updates, everything it runs on:
 
 1. creates the GitHub repository (public; `-Visibility private` for private) and pushes
-2. requests the shared certificate if no app has yet
+2. requests the shared certificate if no site has yet
 3. deploys the stack in `infra\` (the first time in a region, bootstraps the CDK there)
 4. writes the Cognito IDs to `config\cognito-pool.json` and the UI's settings
 5. applies the database migrations

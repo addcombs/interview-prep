@@ -176,7 +176,7 @@ export const TECHNOLOGY_GROUPS: TechnologyGroup[] = [
       },
       {
         slug: 'powershell-scripts', name: 'PowerShell scripts', icon: 'terminal', description: 'Setup, tests, start-up, and deployment',
-        usage: 'scripts/start-all.ps1 installs dependencies, builds and tests both apps, then starts the API and UI; scripts/provision.ps1 sets up AWS from project.json through the CDK stack in infra/, and GitHub Actions builds, tests, and deploys each push to main; scripts/new-app.ps1 in template-0 copies the template into a new, renamed app.',
+        usage: 'scripts/start-all.ps1 installs dependencies, builds and tests both apps, then starts the API and UI; scripts/provision.ps1 sets up AWS from project.json through the CDK stack in infra/, and GitHub Actions builds, tests, and deploys each push to main; the site was created from template-0 with its scripts/new-app.ps1.',
       },
       {
         slug: 'aws-cli', name: 'AWS CLI', icon: 'keyboard', description: 'Command-line access to AWS',
